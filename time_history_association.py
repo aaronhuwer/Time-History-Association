@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 
 REFERENCE_FOLDER = './signal_data/reference'
@@ -14,25 +15,24 @@ def load_refs():
             references[ref.name] = reference_data
     return references
 
-def load_expiremental(filename):
+def load_experimental(filename):
     return pd.read_csv(filename)
 
 def best_associations(experimental, references):
-    # find the delta between every point within the expirement
-    experimental_length = len(experimental)
-
+    experimental_values = np.array(experimental["Intensity"])
+    experimental_length = len(experimental_values)
     best_fits = {}
-
+    
     for reference in references:
-        reference_length = len(references[reference])
         best_difference = float('inf')
         best_start = 0
+        reference_values = np.array(references[reference]["Intensity"])
 
-        for start in range(reference_length - experimental_length):
-
-            difference = 0
-            for index in range(experimental_length):
-                difference += abs(references[reference]['Intensity'][start + index] - experimental['Intensity'][index])
+        for start in range(len(reference_values) - experimental_length):
+            
+            # calculate difference using RSS
+            reference_window = reference_values[start : start + experimental_length]
+            difference = np.sum(np.square(reference_window - experimental_values))
 
             if(difference < best_difference):
                 best_difference = difference
@@ -42,25 +42,26 @@ def best_associations(experimental, references):
             'best_difference': best_difference,
             'best_start': best_start
         }
-    
     return best_fits
 
 def plot_best_fit(experimental, references, best_fits):    
     for fit in best_fits:
         reference = references[fit]
-        offset = best_fits[fit]["best_start"]
+        offset = best_fits[fit]['best_start']
 
-        plt.plot(reference["Time"], reference["Intensity"], label='reference')
-        plt.plot(experimental["Time"] + offset, experimental["Intensity"], label='experiment')
+        plt.plot(reference['Time'], reference['Intensity'], label='reference')
+        plt.plot(experimental['Time'] + offset, experimental['Intensity'], label='experiment')
+        plt.title(fit)
 
         plt.show()
 
 def compute_prob(best_fits):
     differences = []
     total_difference = 0
+
     for fit in best_fits:
-        total_difference += best_fits[fit]["best_difference"]
-        differences.append((fit, best_fits[fit]["best_difference"]))
+        total_difference += best_fits[fit]['best_difference']
+        differences.append((fit, best_fits[fit]['best_difference']))
     
     probs = [ (fit, d / total_difference) for fit, d in differences]
 
@@ -84,8 +85,7 @@ def write_to_csv(name, best_fit, best_prob, second_fit, second_prob):
         'Second best probability': [second_prob]
     })
 
-    file_exists = os.path.isfile(OUTPUT_FILE)
-    df.to_csv(OUTPUT_FILE, index=False, mode='a', header=not file_exists)
+    df.to_csv(OUTPUT_FILE, index=False, mode='a', header=False)
 
 def initialize_csv():
     df = pd.DataFrame(columns=[ 'Signal', 'Best signal fit', 'Best probability', 'Second best fit', 'Second best probability' ]) 
@@ -98,15 +98,15 @@ def main():
 
     with os.scandir(EXPERIMENTAL_FOLDER) as experiments:
         for experiment in experiments:
-            full_path = os.path.join(EXPERIMENTAL_FOLDER, experiment.name)
+            full_path = os.path.join(EXPERIMENTAL_FOLDER, experiment.name)            
+            experimental_data = load_experimental(full_path)
             
-            experimental_data = load_expiremental(full_path)
             best_fits = best_associations(experimental_data, references)
-            # plot_best_fit(experimental_data, references, best_fits)
             best_fit, best_prob, second_fit, second_prob = compute_prob(best_fits)
-            # print(experiment.name, best_fit, best_prob, second_fit, second_prob)
+            # plot_best_fit(experimental_data, references, best_fits)
+
             write_to_csv(experiment.name, best_fit, best_prob, second_fit, second_prob)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
